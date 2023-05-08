@@ -1,35 +1,36 @@
 local QBCore = exports['qb-core']:GetCoreObject()
 local moneyDrop = {}
 
+RegisterNetEvent('police:SetCopCount', function(amount)
+    CurrentCops = amount
+end)
+
 function selectOption(entity)
-    exports['qb-menu']:openMenu({
-        {
-            header = '¿Como quieres robar el ATM?',
-            icon = 'fas fa-code',
-            isMenuHeader = true,
-        },
-        {
-            header = 'Hackearlo',
-            icon = 'fas fa-code-merge',
-            params = {
-                event = 'pnt_atmRobbery:robMethod',
-                args = {
-		            type = 'hack',
-                    entity = entity,
-                }
+    if not (CurrentCops >= Config.MinPolice)
+        QBCore.Functions.Notify(Config.Locales["not_enough_police"], 'error', 5000)
+        return
+    then 
+
+    lib.registerContext({
+        id = 'select_option',
+        title = Config.Locales["select_option_rob_atm"]
+        options = {
+            {
+                title = Config.Locales['type_hack'],
+                icon = 'fa-laptop-code',
+                onSelect = function()
+                    robMethod('hack', entity)
+                end,
+            },
+
+            {
+                title = Config.Locales['type_break'],
+                icon = "fa-hammer"
+                onSelect = function()
+                    robMethod('break', entity)
+                end,
             }
-        },  
-        {
-            header = 'Romper el ATM',
-            icon = 'fas fa-code-pull-request',
-            params = {
-                event = 'pnt_atmRobbery:robMethod',
-                args = {
-                    type = 'break',
-                    entity = entity,
-                }
-            }
-        },
+        }
     })
 end
 
@@ -68,14 +69,19 @@ function startBreaking(entity)
             local atmHealth = GetEntityHealth(entity)
             local pedCoords = GetEntityCoords(cache.ped)
             local distance = #(atmCoords - pedCoords)
-            
-            print(atmHealth)
+            local weaponEquiped = GetSelectedPedWeapon('weapon_crowbar')
+            QBCore.Functions.Notify(Config.Locales["start_breaking_atm"], 'success', 5000)
 
             if distance > 20 then
                 for i = 1, #moneyDrop do
                     DeleteObject(moneyDrop[i])
                 end
+                SetEntityInvicible(entity, false)
                 return
+            end
+
+            if not weaponEquiped then 
+                SetEntityInvicible(entity, true)
             end
 
             if atmHealth == 0 and not doneDrop then 
@@ -91,7 +97,10 @@ function startBreaking(entity)
 
                 count = count + 1
                 if count == 10 then doneDrop = true end
+                SetEntityInvicible(entity, false)
             end
+
+            print("^2DEBUG PRINT^7: ATM HEALTH " + atmHealth)
             Wait(300)
         end
     end)
@@ -101,12 +110,12 @@ function startHacking(entity)
     local haveItem, alreadyRobbed = lib.callback.await('pnt_atmRobbery:checkItem', false, Config.itemToHack, entity)
 
     if not haveItem then 
-        TriggerEvent('QBCore:Notify', 'No tienes el ordenador', 'error')
+        QBCore.Functions.Notify(Config.Locales["no_item_to_hack"], 'error', 5000)
         return
     end
 
     if alreadyRobbed then
-        TriggerEvent('QBCore:Notify', 'Este atm ya está robado', 'error')
+        QBCore.Functions.Notify(Config.Locales['atm_already_robbed'], 'error', 5000)
         return 
     end
 
@@ -116,7 +125,7 @@ function startHacking(entity)
 
     exports['ps-ui']:Thermite(function(success)
         if not success then 
-            TriggerEvent('QBCore:Notify', 'Fallaste', 'error')
+            QBCore.Functions.Notify(Config.Locales['hack_failed'], 'error', 5000)
             return
         end
 
@@ -139,14 +148,13 @@ end
 
 
 
-
-RegisterNetEvent('pnt_atmRobbery:robMethod', function(args)
-    if args.type == 'hack' then
-        startHacking(args.entity)
-    elseif args.type == 'break' then 
-        startBreaking(args.entity)
+function robMethod(method, entity)
+    if method == 'hack' then
+        startHacking(entity)
+    elseif method == 'break' then 
+        startBreaking(entity)
     end
-end)
+end
 
 CreateThread(function()
     exports['qb-target']:AddTargetModel(Config.atmModels, {
@@ -157,6 +165,11 @@ CreateThread(function()
                 action = function(entity)
                     selectOption(entity)
                 end,
+                canInteract = function()
+                    local Player = QBCore.Functions.GetPlayerData()
+                    if Player.job.name == 'police' then return false end 
+                    return true
+                end
             },
         },
         distance = 1.5,
